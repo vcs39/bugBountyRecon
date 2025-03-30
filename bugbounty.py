@@ -47,7 +47,7 @@ print(Fore.GREEN + f"[DEBUG] Created target directory: {TARGET_DIR}")
 def run_command(command, output_file=None):
     print(Fore.CYAN + f"[RUNNING] {command}")
     try:
-        result = subprocess.run(command, shell=True, text=True, capture_output=True, check=True)
+        result = subprocess.run(command, shell=True, text=True, capture_output=True, check=True, timeout=300)
         if output_file:
             with open(os.path.join(TARGET_DIR, output_file), "w") as f:
                 f.write(result.stdout)
@@ -82,22 +82,29 @@ def recon_wildcard(domain):
     run_command(f"assetfinder --subs-only {domain}", "assetfinder.txt")
 
     print(Fore.GREEN + "[*] Merging and deduplicating results...")
-    run_command(f"sort -u {TARGET_DIR}/amass.txt {TARGET_DIR}/subfinder.txt {TARGET_DIR}/assetfinder.txt > {TARGET_DIR}/subdomains.txt")
+    if os.path.exists(f"{TARGET_DIR}/subfinder.txt"):
+        run_command(f"sort -u {TARGET_DIR}/amass.txt {TARGET_DIR}/subfinder.txt {TARGET_DIR}/assetfinder.txt > {TARGET_DIR}/subdomains.txt")
+    else:
+        print(Fore.RED + "[ERROR] subfinder.txt not found. Skipping merge.")
 
     run_command(f"cat {TARGET_DIR}/subdomains.txt | httprobe > {TARGET_DIR}/alive_subdomains.txt")
-    run_command(f"cat {TARGET_DIR}/alive_subdomains.txt | aquatone")
+    if os.path.exists(f"{TARGET_DIR}/alive_subdomains.txt"):
+        run_command(f"cat {TARGET_DIR}/alive_subdomains.txt | aquatone")
+    else:
+        print(Fore.RED + "[ERROR] alive_subdomains.txt not found. Skipping aquatone.")
     print(Fore.GREEN + "[*] Wildcard recon completed!")
 
 
 def single_domain_scan(domain):
     print(Fore.GREEN + "\n[*] Starting single domain scan...")
     run_command(f"nmap -A -T4 {domain}", "nmap_scan.txt")
-    run_command(f"ffuf -u https://{domain}/FUZZ -w /usr/share/wordlists/dirb/common.txt -o {TARGET_DIR}/ffuf_output.txt")
+    run_command(f"ffuf -u https://{domain}/FUZZ -w /usr/share/wordlists/dirb/common.txt -t 10 -o {TARGET_DIR}/ffuf_output.txt")
     run_command(f"hakrawler -url {domain} -depth 2 -plain", "hakrawler.txt")
     run_command(f"paramspider --domain {domain}", "paramspider.txt")
     run_command(f"whatweb {domain}", "whatweb.txt")
     run_command(f"sslscan {domain}", "sslscan.txt")
     run_command(f"python3 linkfinder.py -i https://{domain} -o {TARGET_DIR}/linkfinder_output.html")
+    run_command(f"echo {domain} | hakrawler -d 2 -plain > {TARGET_DIR}/hakrawler.txt")
     print(Fore.GREEN + "[*] Single domain scan completed!")
 
     print(Fore.MAGENTA + "\n[*] Google Dork Suggestions:")
@@ -142,3 +149,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
